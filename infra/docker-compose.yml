@@ -17,6 +17,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    PLUIE_DATABASE_URL: postgresql://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres:5432/pluie
     _AIRFLOW_DB_MIGRATE: "true"
     _AIRFLOW_WWW_USER_CREATE: "true"
     _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_WWW_USER_USERNAME:-admin}
@@ -31,6 +32,8 @@ x-airflow-common: &airflow-common
   depends_on:
     postgres:
       condition: service_healthy
+    pluie-db-init:
+      condition: service_completed_successfully
   networks:
     - pluie_net
 
@@ -49,6 +52,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - pluie_net
+
+  pluie-db-init:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      PGUSER: ${POSTGRES_USER:-airflow}
+    volumes:
+      - ./postgres/pluie.sql:/pluie.sql:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        psql -h postgres -d postgres -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'pluie'" | grep -q 1 || psql -h postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE pluie"
+        psql -h postgres -d pluie -v ON_ERROR_STOP=1 -f /pluie.sql
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - pluie_net
 
@@ -92,6 +114,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+      pluie-db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
 
@@ -102,6 +126,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+      pluie-db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
 
@@ -111,10 +137,14 @@ services:
     restart: unless-stopped
     environment:
       PLUIE_OUT: /opt/project/donnees_pluie_prevue/out
+      PLUIE_DATABASE_URL: postgresql://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres:5432/pluie
     volumes:
       - ..:/opt/project
     ports:
       - "8000:8000"
+    depends_on:
+      pluie-db-init:
+        condition: service_completed_successfully
     networks:
       - pluie_net
 

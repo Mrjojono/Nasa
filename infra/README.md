@@ -21,7 +21,7 @@ docker compose up -d --build
 
 Déposer les fichiers dans `donnees_pluie_prevue/telecharger/in`. L'entrée peut contenir n'importe quoi : seuls les CSV sont transformés.
 
-1. `nettoyer_csv` — remet les colonnes dans l'ordre du contrat et écrit `out/features_modele.csv`
+1. `nettoyer_csv` — remet les colonnes dans l'ordre du contrat, écrit `out/features_modele.csv`, puis charge la table Postgres `features`
 2. `verifier_csv` — refuse le fichier si les 30 colonnes du modèle ne sont pas là
 3. `envoyer_vers_entrainement` — passe ce CSV au DAG du modèle
 
@@ -38,7 +38,7 @@ Déclenchement **manuel** (pas de schedule) depuis l’UI Airflow. Lancer `pluie
 
 ## API + Prometheus
 
-Le service `api` du compose reste démarré. Il lit `out/features_modele.csv` (le CSV de l'ETL), recharge les modèles quand les fichiers changent, et sert le JSON. `GET /api/afrique` renvoie la région, les prévisions et les alertes pour l'Afrique de l'Ouest.
+Le service `api` du compose reste démarré. Il lit la table Postgres `features` (chargée par l'ETL), recharge quand un nouveau chargement est enregistré, et sert le JSON. Les modèles restent des fichiers dans `out/`. `GET /api/afrique` renvoie la région, les prévisions et les alertes pour l'Afrique de l'Ouest.
 
 Prometheus scrape `api:8000/metrics`. L'exporter `9101` publie les KPI d'entraînement (`pluie_model_rmse`, `pluie_model_mae`, `pluie_model_r2`, `pluie_model_bias`).
 

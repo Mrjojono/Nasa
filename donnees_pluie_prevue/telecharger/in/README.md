@@ -3,8 +3,9 @@
 Déposer ici les fichiers à nettoyer. L'entrée peut être n'importe quoi :
 le premier DAG ne retient que les CSV.
 
-Il les remet dans l'ordre des 30 colonnes attendues par le modèle et écrit
-`../../out/features_modele.csv`.
+Il les remet dans l'ordre des 30 colonnes attendues par le modèle, écrit
+`../../out/features_modele.csv`, puis copie ces lignes dans Postgres
+(table `features`). L'API lit cette table.
 
 Les GeoTIFF, HDF et textes laissés à côté sont listés dans
 `out/rapport_etl.txt` et ne vont pas au modèle.
