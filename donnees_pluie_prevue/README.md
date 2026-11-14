@@ -15,7 +15,9 @@ donnees_pluie_prevue/
 ├── 03_indices_cpc/             RONI, ONI, indices Niño, SOI, tableau ONI v6
 ├── 04_imerg_final/             granules HDF5 + script earthaccess
 ├── 05_modis_ndvi/              script earthaccess (compte requis)
-└── preprocessed/               sorties de pretraiter.py (voir plus bas)
+├── telecharger/in/             CSV à nettoyer (le reste est ignoré par l'ETL)
+├── out/                        CSV du modèle, cubes historiques et modèles
+└── preprocessed -> out         ancien chemin, conservé comme lien
 ```
 
 ## 1. CHIRPS v3.0 mensuel — `01_chirps_v3_mensuel/`
@@ -88,17 +90,18 @@ Le script `../pretraiter.py` lit les fichiers présents et produit des cubes
 NetCDF prêts à l'emploi plus une table de features par (mois, maille) :
 
 ```bash
-cd donnees_pluie_prevue
-.venv/bin/python ../pretraiter.py                     # bbox Sahel par défaut
-.venv/bin/python ../pretraiter.py --lon-min -20 --lon-max 20 \
-                                  --lat-min -10 --lat-max 25 --table-res 0.5
+.venv/bin/python pretraiter.py                        # produits satellite → out/
+.venv/bin/python etl.py                               # telecharger/in → out/features_modele.csv
 ```
 
-Sorties dans `preprocessed/` (détaillées dans `preprocessed/README.md`) :
+Le DAG d'ETL ne lance que `etl.py`. `pretraiter.py` reste le script des GeoTIFF et des indices, hors du modèle.
+
+Sorties du modèle dans `out/` :
 
 - `chirps_sahel_mensuel.nc`, `imerg_sahel_mensuel.nc` — pluie (time, lat, lon) en mm/mois ;
 - `indices_enso_mensuel.nc` — ONI, RONI, SOI, Niño, Atl3 + champ SST ERSST v6 ;
-- `features_chirps_sahel.csv`, `features_imerg_sahel.csv` — table ML ;
+- `features_modele.csv` — CSV unique lu par le modèle et par l'API, produit par `etl.py` ;
+- `features_chirps_sahel.csv`, `features_imerg_sahel.csv` — tables historiques du script satellite ;
 - `rapport_controle.txt` — statistiques par mois, masques, contrôles croisés.
 
 Le script est idempotent : il prend tous les fichiers présents, donc il suffit

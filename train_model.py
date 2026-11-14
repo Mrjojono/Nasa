@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Entraînement d'un modèle XGBoost de prévision de pluie mensuelle.
 
-Source : donnees_pluie_prevue/preprocessed/features_chirps_sahel.csv
+Source : donnees_pluie_prevue/out/features_chirps_sahel.csv
 Cibles : rain_next1_mm (pluie mois+1) et rain_next3_mm (pluie mois+3)
-Sortie : donnees_pluie_prevue/preprocessed/xgb_rain_next1.joblib
-         donnees_pluie_prevue/preprocessed/xgb_rain_next3.joblib
-         donnees_pluie_prevue/preprocessed/metrics.json
+Sortie : donnees_pluie_prevue/out/xgb_<cible>.joblib
+         donnees_pluie_prevue/out/metrics_<cible>.json
 
 Usage :
     .venv/bin/python train_model.py
@@ -25,8 +24,9 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
-PRE = Path(__file__).resolve().parent / "donnees_pluie_prevue" / "preprocessed"
-CSV = PRE / "features_chirps_sahel.csv"
+from chemins import out_dir
+
+PRE = out_dir()
 
 FEATURES = [
     "year", "month", "lat", "lon",
@@ -43,8 +43,8 @@ ID_COLS = ["date", "year", "month", "lat", "lon"]
 TARGETS = ["rain_next1_mm", "rain_next3_mm"]
 
 
-def load_data() -> pd.DataFrame:
-    df = pd.read_csv(CSV, parse_dates=["date"])
+def load_data(csv_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(csv_path, parse_dates=["date"])
     return df
 
 
@@ -102,16 +102,20 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default="rain_next1_mm",
                     choices=TARGETS, help="cible à prédire")
+    ap.add_argument("--csv", type=Path,
+                    default=PRE / "features_modele.csv",
+                    help="CSV nettoyé par l'ETL")
     ap.add_argument("--out", type=Path, default=PRE,
                     help="dossier de sortie pour le modèle et les métriques")
     args = ap.parse_args()
 
     target = args.target
     out = args.out
+    csv_path = args.csv
     out.mkdir(parents=True, exist_ok=True)
 
-    print(f"Chargement : {CSV}")
-    df = load_data()
+    print(f"Chargement : {csv_path}")
+    df = load_data(csv_path)
     print(f"  {len(df):,} lignes, {df['date'].nunique()} mois, "
           f"{df.groupby(['lat','lon']).ngroups:,} mailles")
 
@@ -143,8 +147,9 @@ def main() -> int:
     joblib.dump(model, model_path)
     print(f"\nModèle sauvegardé : {model_path}")
 
-    metrics_path = out / "metrics.json"
     metrics_out = {
+        "status": "ok",
+        "model": "xgboost",
         "target": target,
         "n_train": int(len(X_train)),
         "n_test": int(len(X_test)),
@@ -152,7 +157,11 @@ def main() -> int:
         "metrics": metrics,
         "feature_importance": imp.to_dict("records"),
     }
-    metrics_path.write_text(json.dumps(metrics_out, indent=2, ensure_ascii=False))
+    encoded = json.dumps(metrics_out, indent=2, ensure_ascii=False)
+    # Fichier par cible : les deux entraînements Airflow n'écrasent pas le même JSON.
+    metrics_path = out / f"metrics_{target}.json"
+    metrics_path.write_text(encoded)
+    (out / "metrics.json").write_text(encoded)
     print(f"Métriques sauvegardées : {metrics_path}")
 
     return 0

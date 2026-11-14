@@ -1,9 +1,12 @@
-"""DAG pluie prévue — contrôle données → entraînement → publication métriques."""
+"""DAG pluie prévue — out/ → entraînement → métriques → API REST."""
 
 from __future__ import annotations
 
 import json
 import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -12,9 +15,10 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 
 PROJECT = Path("/opt/project")
-PRE = PROJECT / "donnees_pluie_prevue" / "preprocessed"
+OUT = PROJECT / "donnees_pluie_prevue" / "out"
 MONITORING = Path("/opt/monitoring")
 PYTHON = sys.executable
+API_BASE = "http://api:8000"
 
 DEFAULT_ARGS = {
     "owner": "pluie-prevue",
@@ -27,7 +31,7 @@ DEFAULT_ARGS = {
 def check_data_ready(**context) -> None:
     dag_run = context.get("dag_run")
     conf = dict(dag_run.conf or {}) if dag_run is not None else {}
-    csv_path = Path(conf.get("features_csv") or (PRE / "features_chirps_sahel.csv"))
+    csv_path = Path(conf.get("features_csv") or (OUT / "features_modele.csv"))
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV manquant : {csv_path}")
     size_mb = csv_path.stat().st_size / (1024 * 1024)
@@ -42,18 +46,12 @@ def publish_metrics() -> None:
     models: dict = {}
 
     for target in ("rain_next1_mm", "rain_next3_mm"):
-        per_target = MONITORING / f"metrics_{target}.json"
+        per_target = OUT / f"metrics_{target}.json"
+        published = MONITORING / f"metrics_{target}.json"
         if per_target.exists():
-            models[target] = json.loads(per_target.read_text())
-
-    legacy = PRE / "metrics.json"
-    if legacy.exists():
-        block = json.loads(legacy.read_text())
-        target = block.get("target", "unknown")
-        models.setdefault(target, block)
-        (MONITORING / f"metrics_{target}.json").write_text(
-            json.dumps(block, indent=2, ensure_ascii=False)
-        )
+            block = json.loads(per_target.read_text())
+            models[target] = block
+            published.write_text(json.dumps(block, indent=2, ensure_ascii=False))
 
     payload = {
         "updated_at": datetime.utcnow().isoformat() + "Z",
@@ -62,14 +60,46 @@ def publish_metrics() -> None:
     out = MONITORING / "ml_metrics.json"
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
     print(f"Publié {out} ({len(models)} modèles)")
+    if len(models) < 2:
+        raise RuntimeError("Métriques incomplètes : les deux cibles doivent être entraînées")
+
+
+def attendre_api() -> None:
+    """Le conteneur API tourne déjà ; on attend qu'il serve le contrat JSON."""
+    health_url = f"{API_BASE}/api/health"
+    last_error = "aucun essai"
+    for _ in range(30):
+        try:
+            with urllib.request.urlopen(health_url, timeout=120) as response:
+                health = json.loads(response.read().decode())
+            if health.get("status") != "ok" or set(health.get("models_loaded") or []) < {1, 3}:
+                last_error = f"health={health}"
+                time.sleep(2)
+                continue
+            with urllib.request.urlopen(f"{API_BASE}/api/afrique", timeout=120) as response:
+                afrique = json.loads(response.read().decode())
+            if afrique.get("resource") != "afrique":
+                raise RuntimeError("la réponse /api/afrique n'est pas le JSON Afrique")
+            if "region" not in afrique or "forecasts" not in afrique:
+                raise RuntimeError(f"JSON Afrique incomplet : {list(afrique)}")
+            print(
+                f"API JSON Afrique prête, prévisions : {sorted(afrique['forecasts'])}"
+            )
+            return
+        except urllib.error.HTTPError as exc:
+            last_error = f"HTTP {exc.code}"
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+        time.sleep(2)
+    raise RuntimeError(f"API pas prête ({API_BASE}) : {last_error}")
 
 
 with DAG(
     dag_id="pluie_prevue_pipeline",
-    description="Prétraitement prêt → XGBoost lead 1/3 → métriques Grafana",
+    description="out/ → XGBoost lead 1/3 → métriques Grafana → API REST",
     default_args=DEFAULT_ARGS,
     start_date=datetime(2026, 1, 1),
-    schedule_interval=None,  # déclenchement manuel (hackathon)
+    schedule_interval=None,
     catchup=False,
     tags=["nasa-hack", "pluie", "xgboost"],
 ) as dag:
@@ -78,11 +108,11 @@ with DAG(
         python_callable=check_data_ready,
     )
 
-    # Entraînement : écrit aussi une copie dans /opt/monitoring
     train_cmd = (
-        f'cd {PROJECT} && {PYTHON} train_model.py --target {{{{ params.target }}}} '
-        f'--out {PRE} && '
-        f'cp {PRE}/metrics.json {MONITORING}/metrics_{{{{ params.target }}}}.json'
+        f"cd {PROJECT} && {PYTHON} train_model.py "
+        f"--target {{{{ params.target }}}} "
+        f"--csv {OUT}/features_modele.csv "
+        f"--out {OUT}"
     )
 
     t_train_1 = BashOperator(
@@ -102,4 +132,9 @@ with DAG(
         python_callable=publish_metrics,
     )
 
-    t_check >> [t_train_1, t_train_3] >> t_publish
+    t_api = PythonOperator(
+        task_id="verifier_api",
+        python_callable=attendre_api,
+    )
+
+    t_check >> [t_train_1, t_train_3] >> t_publish >> t_api

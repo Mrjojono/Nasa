@@ -14,7 +14,7 @@ MONITORING = Path(os.environ.get("MONITORING_DIR", "/monitoring"))
 PREPROCESSED = Path(
     os.environ.get(
         "PREPROCESSED_DIR",
-        "/opt/project/donnees_pluie_prevue/preprocessed",
+        "/opt/project/donnees_pluie_prevue/out",
     )
 )
 

@@ -15,32 +15,32 @@ docker compose up -d --build
 | Grafana | http://localhost:3000 | admin / admin |
 | Prometheus | http://localhost:9090 | — |
 | Metrics exporter | http://localhost:9101/metrics | — |
+| API | http://localhost:8000/api/health | — |
 
-## DAG `pluie_pretraitement`
+## DAG `pluie_pretraitement` (ETL)
 
-1. `preparer_features` — lance `pretraiter.py` (GeoTIFF, indices, SST → CSV)
-2. `verifier_features` — exige les deux CSV et écrit `preprocessed/handoff.json`
-3. `envoyer_vers_entrainement` — déclenche `pluie_prevue_pipeline` avec le chemin du CSV
+Déposer les fichiers dans `donnees_pluie_prevue/telecharger/in`. L'entrée peut contenir n'importe quoi : seuls les CSV sont transformés.
 
-Les deux DAG partagent le disque du projet. Le modèle est entraîné sur le CSV CHIRPS. Le CSV IMERG est produit et vérifié, mais les deux périodes ne se recouvrent pas, donc il n'entre pas dans l'entraînement.
+1. `nettoyer_csv` — remet les colonnes dans l'ordre du contrat et écrit `out/features_modele.csv`
+2. `verifier_csv` — refuse le fichier si les 30 colonnes du modèle ne sont pas là
+3. `envoyer_vers_entrainement` — passe ce CSV au DAG du modèle
+
+Le modèle n'est pas entraîné ici. Il ne reçoit pas les GeoTIFF.
 
 ## DAG `pluie_prevue_pipeline`
 
-1. `check_data_ready` — vérifie le CSV reçu (ou `features_chirps_sahel.csv` si le run est manuel)
-2. `train_lead1` / `train_lead3` — lance `train_model.py` (lourd en RAM)
-3. `publish_metrics` — écrit `infra/monitoring/ml_metrics.json` pour Grafana
+1. `check_data_ready` — le fichier reçu doit être `out/features_modele.csv`
+2. `train_lead1` / `train_lead3` — entraînement uniquement sur ce CSV
+3. `publish_metrics` — RMSE, MAE, R², biais pour Grafana et Prometheus
+4. `verifier_api` — attend le JSON `GET /api/afrique`
 
 Déclenchement **manuel** (pas de schedule) depuis l’UI Airflow. Lancer `pluie_pretraitement` pour enchaîner les deux.
 
 ## API + Prometheus
 
-```bash
-# depuis la racine du projet
-.venv/bin/pip install prometheus-fastapi-instrumentator
-.venv/bin/python api.py --host 0.0.0.0 --port 8000
-```
+Le service `api` du compose reste démarré. Il lit `out/features_modele.csv` (le CSV de l'ETL), recharge les modèles quand les fichiers changent, et sert le JSON. `GET /api/afrique` renvoie la région, les prévisions et les alertes pour l'Afrique de l'Ouest.
 
-Prometheus scrape `host.docker.internal:8000/metrics`.
+Prometheus scrape `api:8000/metrics`. L'exporter `9101` publie les KPI d'entraînement (`pluie_model_rmse`, `pluie_model_mae`, `pluie_model_r2`, `pluie_model_bias`).
 
 ## Arrêt
 
