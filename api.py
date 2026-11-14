@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
 """API de prévision de pluie mensuelle — XGBoost.
 
-Endpoints :
-  GET /api/predict?lat=&lon=&year=&month=&lead=1|3
+Contrat frontend (mêmes formes que contract/mock) :
   GET /api/meta
   GET /api/frames?layer=rain_mm|anomaly_mm|anomaly_pct|anomaly_z
+  GET /api/forecast?lead=1|3
+  GET /api/point?lat=&lon=
+  GET /api/alerts
+
+Maille unique :
+  GET /api/predict?lat=&lon=&year=&month=&lead=1|3
 
 Usage :
-    .venv/bin/python api.py                    # port 8000
-    .venv/bin/python api.py --port 8080
+    donnees_pluie_prevue/.venv/bin/python api.py --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+from contract_live import Catalog
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -28,7 +33,6 @@ except ImportError:  # optionnel hors stack monitoring
     Instrumentator = None  # type: ignore[misc, assignment]
 
 PRE = Path(__file__).resolve().parent / "donnees_pluie_prevue" / "preprocessed"
-MOCK = Path(__file__).resolve().parent / "contract" / "mock"
 CSV = PRE / "features_chirps_sahel.csv"
 
 FEATURES = [
@@ -49,6 +53,12 @@ MODEL_BY_LEAD = {
 }
 
 app = FastAPI(title="Pluie prévue — API XGBoost", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 if Instrumentator is not None:
     Instrumentator().instrument(app).expose(app, endpoint="/metrics")
@@ -58,16 +68,18 @@ _df: pd.DataFrame | None = None
 _models: dict[int, object] = {}
 _lat_unique: np.ndarray = np.array([])
 _lon_unique: np.ndarray = np.array([])
+_catalog: Catalog | None = None
 
 
 def _load_state() -> None:
-    global _df, _models, _lat_unique, _lon_unique
+    global _df, _models, _lat_unique, _lon_unique, _catalog
     _df = pd.read_csv(CSV, parse_dates=["date"])
     _lat_unique = np.sort(_df["lat"].unique())
     _lon_unique = np.sort(_df["lon"].unique())
     for lead, path in MODEL_BY_LEAD.items():
         if path.exists():
             _models[lead] = joblib.load(path)
+    _catalog = Catalog(_df, _models)
 
 
 @app.on_event("startup")
@@ -138,51 +150,49 @@ def predict(
     }
 
 
+def _ready() -> Catalog:
+    if _catalog is None:
+        raise HTTPException(status_code=503, detail="Données non chargées")
+    return _catalog
+
+
 @app.get("/api/meta")
 def meta() -> dict:
-    metrics_path = PRE / "metrics.json"
-    info = {
-        "dataset": "pluie-prevue-sahel",
-        "product": "chirps",
-        "region": {"id": "sahel", "bbox": [-20.0, -10.0, 20.0, 25.0], "crs": "EPSG:4326"},
-        "n_rows": int(len(_df)) if _df is not None else 0,
-        "n_months": int(_df["date"].nunique()) if _df is not None else 0,
-        "n_cells": int(_df.groupby(["lat", "lon"]).ngroups) if _df is not None else 0,
-        "models": {str(l): str(p.name) for l, p in MODEL_BY_LEAD.items()},
-    }
-    if metrics_path.exists():
-        info["metrics"] = json.loads(metrics_path.read_text())
-    return info
-
-
-@app.get("/api/frames")
-def frames(layer: str = Query(..., description="rain_mm|anomaly_mm|anomaly_pct|anomaly_z")) -> JSONResponse:
-    allowed = {"rain_mm", "anomaly_mm", "anomaly_pct", "anomaly_z"}
-    if layer not in allowed:
-        raise HTTPException(status_code=400, detail=f"layer inconnu : {layer}")
-    path = MOCK / f"frames_{layer}.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"frames indisponible : {layer}")
-    data = json.loads(path.read_text())
-    return JSONResponse(content=data)
-
-
-@app.get("/api/alerts")
-def alerts() -> JSONResponse:
-    path = MOCK / "alerts.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="alerts indisponible")
-    data = json.loads(path.read_text())
-    return JSONResponse(content=data)
+    return _ready().meta
 
 
 @app.get("/api/meta/layers")
-def layers() -> JSONResponse:
-    path = MOCK / "meta.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="meta indisponible")
-    data = json.loads(path.read_text())
-    return JSONResponse(content=data.get("layers", []))
+def layers() -> list:
+    return _ready().meta["layers"]
+
+
+@app.get("/api/frames")
+def frames(layer: str = Query(..., description="rain_mm|anomaly_mm|anomaly_pct|anomaly_z")) -> dict:
+    catalog = _ready()
+    if layer not in catalog.frames:
+        raise HTTPException(status_code=400, detail=f"layer inconnu : {layer}")
+    return catalog.frames[layer]
+
+
+@app.get("/api/forecast")
+def forecast(lead: int = Query(..., description="1 ou 3")) -> dict:
+    catalog = _ready()
+    if lead not in catalog.forecasts:
+        raise HTTPException(status_code=400, detail=f"lead non supporté : {lead}")
+    return catalog.forecasts[lead]
+
+
+@app.get("/api/point")
+def point(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+) -> dict:
+    return _ready().point(lat, lon)
+
+
+@app.get("/api/alerts")
+def alerts() -> dict:
+    return _ready().alerts
 
 
 def main() -> int:
