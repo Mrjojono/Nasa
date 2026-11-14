@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 
 from chemins import out_dir
 from contract_live import CONTRACT_VERSION, Catalog
+from base_pluie import database_url, etat_chargement, lire_features
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -85,20 +86,31 @@ def _table_csv() -> Path:
 
 
 def _signature() -> tuple:
-    table = _table_csv()
-    paths = [table, *MODEL_BY_LEAD.values()]
-    return tuple(
+    modeles = tuple(
         (str(path), path.stat().st_mtime_ns if path.exists() else 0)
-        for path in paths
+        for path in MODEL_BY_LEAD.values()
+    )
+    if database_url():
+        return ("postgres", etat_chargement(), modeles)
+    table = _table_csv()
+    return (
+        "csv",
+        (str(table), table.stat().st_mtime_ns if table.exists() else 0),
+        modeles,
     )
 
 
 def _load_state() -> None:
     global _df, _models, _lat_unique, _lon_unique, _catalog
-    table = _table_csv()
-    if not table.exists():
-        raise FileNotFoundError(table)
-    frame = pd.read_csv(table, parse_dates=["date"])
+    if database_url():
+        frame = lire_features()
+        if frame.empty:
+            raise FileNotFoundError("table features vide")
+    else:
+        table = _table_csv()
+        if not table.exists():
+            raise FileNotFoundError(table)
+        frame = pd.read_csv(table, parse_dates=["date"])
     models: dict[int, object] = {}
     for lead, path in MODEL_BY_LEAD.items():
         if path.exists():
@@ -119,9 +131,13 @@ def _maybe_reload() -> None:
         sig = _signature()
         if sig == _sig:
             return
-        table = _table_csv()
-        if not table.exists() or table.stat().st_size == 0:
-            return
+        if database_url():
+            if etat_chargement()[1] == 0:
+                return
+        else:
+            table = _table_csv()
+            if not table.exists() or table.stat().st_size == 0:
+                return
         _load_state()
         _sig = _signature()
 
@@ -141,6 +157,7 @@ def health():
     body = {
         "status": "ok" if ready else "waiting",
         "models_loaded": sorted(_models.keys()),
+        "source": "postgres" if database_url() else "csv",
         "out": str(PRE),
     }
     if not ready:

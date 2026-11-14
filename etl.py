@@ -21,6 +21,7 @@ import pandas as pd
 
 from chemins import entree_brute, out_dir
 from pretraiter import COLUMNS, ecrire_contrat, verifier_table
+from base_pluie import charger_csv, database_url
 
 # Noms fréquents → colonne du contrat. La colonne canonique est toujours acceptée.
 ALIAS = {
@@ -204,6 +205,15 @@ def main() -> int:
     )
     if stats["ignores"]:
         print(f"Ignorés (pas du CSV) : {len(stats['ignores'])}")
+    if not database_url():
+        print("PLUIE_DATABASE_URL absent : le CSV n'est pas chargé dans Postgres")
+        return 0
+    try:
+        n = charger_csv(args.sortie)
+    except Exception as exc:  # connexion ou schéma
+        print(f"Chargement Postgres impossible : {exc}", file=sys.stderr)
+        return 1
+    print(f"Postgres : {n} lignes dans features")
     return 0
 
 

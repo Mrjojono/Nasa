@@ -10,7 +10,8 @@ RUN pip install --no-cache-dir \
       scikit-learn==1.5.2 \
       joblib==1.4.2 \
       prometheus-fastapi-instrumentator==7.0.2 \
- && pip install --no-cache-dir --no-deps xgboost==2.1.3
+ && pip install --no-cache-dir --no-deps xgboost==2.1.3 \
+ && pip install --no-cache-dir psycopg2-binary==2.9.10
 
 ENV PLUIE_OUT=/opt/project/donnees_pluie_prevue/out
 EXPOSE 8000
