@@ -1,0 +1,484 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nasa-hack.local/contract/pluie-prevue.schema.json",
+  "title": "Contrat de données — Pluie prévue (Sahel)",
+  "description": "Contrat unique entre le back-end de prétraitement/prévision et le front cartographique. Un fichier mock = une réponse d'API. Le champ `resource` identifie le type de réponse.",
+  "oneOf": [
+    { "$ref": "#/$defs/Meta" },
+    { "$ref": "#/$defs/Frames" },
+    { "$ref": "#/$defs/Forecast" },
+    { "$ref": "#/$defs/Point" },
+    { "$ref": "#/$defs/Alerts" }
+  ],
+
+  "$defs": {
+
+    "ContractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Version sémantique du contrat. Le front doit refuser une majeure inconnue."
+    },
+
+    "IsoDate": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Date au format ISO 8601 (AAAA-MM-JJ), toujours le premier jour du mois pour une série mensuelle."
+    },
+
+    "IsoDateTime": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+
+    "NullableNumber": {
+      "oneOf": [{ "type": "number" }, { "type": "null" }],
+      "description": "null = valeur absente (océan, hors couverture, non calculable). Jamais NaN ni -9999."
+    },
+
+    "ValueArray": {
+      "type": "array",
+      "description": "Valeurs à plat, longueur = nx*ny du `grid`. Ordre lineaire : latitude croissante puis longitude croissante.",
+      "items": { "$ref": "#/$defs/NullableNumber" }
+    },
+
+    "GridAxis": {
+      "type": "object",
+      "required": ["start", "step", "count", "order"],
+      "properties": {
+        "start": { "type": "number", "description": "Centre de la première maille, en degrés." },
+        "step": { "type": "number", "exclusiveMinimum": 0, "description": "Pas en degrés (toujours positif ; l'ordre est donné par `order`)." },
+        "count": { "type": "integer", "minimum": 1 },
+        "order": { "enum": ["ascending", "descending"] }
+      },
+      "additionalProperties": false
+    },
+
+    "Grid": {
+      "type": "object",
+      "description": "Grille régulière latitude/longitude. index = iy * nx + ix, avec iy sur `lat` et ix sur `lon`.",
+      "required": ["type", "nx", "ny", "resolution", "lon", "lat", "layout", "nodata"],
+      "properties": {
+        "type": { "const": "regular_latlon" },
+        "nx": { "type": "integer", "minimum": 1, "description": "Nombre de colonnes (longitude)." },
+        "ny": { "type": "integer", "minimum": 1, "description": "Nombre de lignes (latitude)." },
+        "resolution": { "type": "number", "exclusiveMinimum": 0 },
+        "lon": { "$ref": "#/$defs/GridAxis" },
+        "lat": { "$ref": "#/$defs/GridAxis" },
+        "layout": { "const": "row_major_lat_then_lon" },
+        "nodata": { "type": "null" }
+      },
+      "additionalProperties": false
+    },
+
+    "Region": {
+      "type": "object",
+      "required": ["id", "label", "bbox", "crs"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "bbox": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" },
+          "description": "[lon_min, lat_min, lon_max, lat_max]"
+        },
+        "crs": { "const": "EPSG:4326" }
+      },
+      "additionalProperties": false
+    },
+
+    "PaletteStop": {
+      "type": "object",
+      "required": ["value", "color"],
+      "properties": {
+        "value": { "type": "number" },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+      },
+      "additionalProperties": false
+    },
+
+    "Layer": {
+      "type": "object",
+      "required": ["id", "label", "unit", "type", "value_scale", "range", "palette", "legend", "scope", "available"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "label": { "type": "string", "description": "Libellé affichable en français." },
+        "unit": { "type": "string" },
+        "type": { "enum": ["continuous", "categorical"] },
+        "value_scale": {
+          "enum": ["linear", "sqrt", "log"],
+          "description": "Transformation à appliquer avant la palette. sqrt convient aux pluies très asymétriques."
+        },
+        "range": {
+          "type": "object",
+          "required": ["min", "max"],
+          "properties": {
+            "min": { "type": "number" },
+            "max": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "clamp": { "type": "boolean", "description": "Si true, écrêter les valeurs hors `range` au lieu de les laisser déborder." },
+        "precision": { "type": "integer", "minimum": 0 },
+        "palette": {
+          "type": "object",
+          "required": ["kind", "stops"],
+          "properties": {
+            "kind": { "enum": ["sequential", "diverging", "categorical"] },
+            "stops": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/PaletteStop" } }
+          },
+          "additionalProperties": false
+        },
+        "legend": {
+          "type": "object",
+          "required": ["ticks"],
+          "properties": {
+            "ticks": { "type": "array", "minItems": 2, "items": { "type": "number" } },
+            "labels": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        },
+        "scope": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["observation", "forecast"] },
+          "description": "Sur quelles réponses la couche est disponible."
+        },
+        "available": { "type": "boolean" },
+        "reason": { "type": "string", "description": "Renseigné si available = false." }
+      },
+      "additionalProperties": false
+    },
+
+    "Source": {
+      "type": "object",
+      "required": ["id", "label", "url", "attribution"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "url": { "type": "string" },
+        "attribution": { "type": "string", "description": "Mention à afficher sur la carte." }
+      },
+      "additionalProperties": false
+    },
+
+    "Meta": {
+      "type": "object",
+      "required": ["resource", "contract_version", "dataset", "region", "grid", "time", "layers", "sources", "render"],
+      "properties": {
+        "resource": { "const": "meta" },
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "dataset": {
+          "type": "object",
+          "required": ["id", "title", "product", "generated_at", "language"],
+          "properties": {
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "product": { "enum": ["chirps", "imerg", "fusion"] },
+            "generated_at": { "$ref": "#/$defs/IsoDateTime" },
+            "language": { "const": "fr" }
+          },
+          "additionalProperties": false
+        },
+        "region": { "$ref": "#/$defs/Region" },
+        "grid": { "$ref": "#/$defs/Grid" },
+        "time": {
+          "type": "object",
+          "required": ["step", "start", "end", "available", "default"],
+          "properties": {
+            "step": { "const": "P1M" },
+            "start": { "$ref": "#/$defs/IsoDate" },
+            "end": { "$ref": "#/$defs/IsoDate" },
+            "available": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/IsoDate" } },
+            "default": { "$ref": "#/$defs/IsoDate" }
+          },
+          "additionalProperties": false
+        },
+        "layers": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Layer" } },
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Source" } },
+        "render": {
+          "type": "object",
+          "required": ["mode", "tile_url", "style"],
+          "properties": {
+            "mode": { "enum": ["inline_grid", "tiles"], "description": "inline_grid = tableaux `values` dans le JSON ; tiles = URLs de tuiles, à privilégier en production." },
+            "tile_url": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "style": { "enum": ["heatmap", "cells", "contour"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "FrameStats": {
+      "type": "object",
+      "required": ["min", "max", "mean", "valid", "coverage"],
+      "properties": {
+        "min": { "$ref": "#/$defs/NullableNumber" },
+        "max": { "$ref": "#/$defs/NullableNumber" },
+        "mean": { "$ref": "#/$defs/NullableNumber" },
+        "valid": { "type": "integer", "minimum": 0 },
+        "coverage": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+
+    "Frame": {
+      "type": "object",
+      "required": ["time", "values", "stats"],
+      "properties": {
+        "time": { "$ref": "#/$defs/IsoDate" },
+        "values": { "$ref": "#/$defs/ValueArray" },
+        "stats": { "$ref": "#/$defs/FrameStats" }
+      },
+      "additionalProperties": false
+    },
+
+    "Frames": {
+      "type": "object",
+      "required": ["resource", "contract_version", "layer", "unit", "grid", "frames"],
+      "properties": {
+        "resource": { "const": "frames" },
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "layer": { "type": "string" },
+        "unit": { "type": "string" },
+        "grid": { "$ref": "#/$defs/Grid" },
+        "frames": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Frame" } }
+      },
+      "additionalProperties": false
+    },
+
+    "ForecastLayer": {
+      "type": "object",
+      "required": ["values"],
+      "properties": {
+        "values": { "$ref": "#/$defs/ValueArray" },
+        "p10": { "$ref": "#/$defs/ValueArray" },
+        "p90": { "$ref": "#/$defs/ValueArray" }
+      },
+      "additionalProperties": false
+    },
+
+    "Evaluation": {
+      "type": "object",
+      "required": ["method", "per_lead"],
+      "properties": {
+        "method": { "type": "string" },
+        "per_lead": {
+          "type": "object",
+          "required": ["1"],
+          "properties": {
+            "1": { "$ref": "#/$defs/LeadScore" },
+            "3": { "$ref": "#/$defs/LeadScore" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "LeadScore": {
+      "type": "object",
+      "required": ["rmse", "mae", "bias", "skill_vs_climatology", "n"],
+      "properties": {
+        "rmse": { "$ref": "#/$defs/NullableNumber" },
+        "mae": { "$ref": "#/$defs/NullableNumber" },
+        "bias": { "$ref": "#/$defs/NullableNumber" },
+        "skill_vs_climatology": { "$ref": "#/$defs/NullableNumber" },
+        "n": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "Model": {
+      "type": "object",
+      "required": ["id", "label", "kind", "status", "version", "training"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "kind": { "enum": ["baseline", "trained", "analog"] },
+        "status": { "enum": ["placeholder", "ready"] , "description": "placeholder = valeurs de démonstration, à remplacer par le modèle entraîné." },
+        "version": { "type": "string" },
+        "training": {
+          "type": "object",
+          "required": ["start", "end", "parameters"],
+          "properties": {
+            "start": { "$ref": "#/$defs/IsoDate" },
+            "end": { "$ref": "#/$defs/IsoDate" },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": { "type": ["number", "string", "boolean"] }
+            }
+          },
+          "additionalProperties": false
+        },
+        "evaluation": { "$ref": "#/$defs/Evaluation" }
+      },
+      "additionalProperties": false
+    },
+
+    "Forecast": {
+      "type": "object",
+      "required": ["resource", "contract_version", "model", "issued_at", "target", "lead_months", "grid", "layers", "summary", "baseline"],
+      "properties": {
+        "resource": { "const": "forecast" },
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "model": { "$ref": "#/$defs/Model" },
+        "issued_at": { "$ref": "#/$defs/IsoDate" },
+        "target": { "$ref": "#/$defs/IsoDate" },
+        "lead_months": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "grid": { "$ref": "#/$defs/Grid" },
+        "layers": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/ForecastLayer" }
+        },
+        "summary": {
+          "type": "object",
+          "required": ["region_mean_mm", "region_clim_mm", "region_anomaly_pct", "prob_wetter_than_normal", "area_wetter_pct", "area_drier_pct"],
+          "properties": {
+            "region_mean_mm": { "$ref": "#/$defs/NullableNumber" },
+            "region_clim_mm": { "$ref": "#/$defs/NullableNumber" },
+            "region_anomaly_pct": { "$ref": "#/$defs/NullableNumber" },
+            "prob_wetter_than_normal": { "$ref": "#/$defs/NullableNumber" },
+            "area_wetter_pct": { "$ref": "#/$defs/NullableNumber" },
+            "area_drier_pct": { "$ref": "#/$defs/NullableNumber" }
+          },
+          "additionalProperties": false
+        },
+        "baseline": {
+          "type": "object",
+          "required": ["id", "label", "rmse"],
+          "properties": {
+            "id": { "type": "string" },
+            "label": { "type": "string" },
+            "rmse": { "$ref": "#/$defs/NullableNumber" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Point": {
+      "type": "object",
+      "required": ["resource", "contract_version", "cell", "label", "unit", "series"],
+      "properties": {
+        "resource": { "const": "point" },
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "cell": {
+          "type": "object",
+          "required": ["lat", "lon", "is_land"],
+          "properties": {
+            "lat": { "type": "number" },
+            "lon": { "type": "number" },
+            "is_land": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "label": { "type": "string" },
+        "unit": { "type": "string" },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["time", "rain_mm", "clim_mm", "anomaly_mm", "anomaly_z", "kind"],
+            "properties": {
+              "time": { "$ref": "#/$defs/IsoDate" },
+              "kind": { "enum": ["observation", "forecast"] },
+              "rain_mm": { "$ref": "#/$defs/NullableNumber" },
+              "clim_mm": { "$ref": "#/$defs/NullableNumber" },
+              "anomaly_mm": { "$ref": "#/$defs/NullableNumber" },
+              "anomaly_z": { "$ref": "#/$defs/NullableNumber" },
+              "forecast_mm": { "$ref": "#/$defs/NullableNumber" },
+              "forecast_p10": { "$ref": "#/$defs/NullableNumber" },
+              "forecast_p90": { "$ref": "#/$defs/NullableNumber" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Alerts": {
+      "type": "object",
+      "required": ["resource", "contract_version", "time", "severity", "indicators", "classes", "top_cells", "history"],
+      "properties": {
+        "resource": { "const": "alerts" },
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "time": { "$ref": "#/$defs/IsoDate" },
+        "severity": {
+          "type": "object",
+          "required": ["level", "label", "score"],
+          "properties": {
+            "level": { "enum": ["none", "low", "moderate", "high", "extreme"] },
+            "label": { "type": "string" },
+            "score": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "indicators": {
+          "type": "object",
+          "required": ["rain_mean_mm", "clim_mean_mm", "anomaly_pct", "anomaly_z_mean", "area_below_normal_pct", "area_deficit_severe_pct"],
+          "properties": {
+            "rain_mean_mm": { "$ref": "#/$defs/NullableNumber" },
+            "clim_mean_mm": { "$ref": "#/$defs/NullableNumber" },
+            "anomaly_pct": { "$ref": "#/$defs/NullableNumber" },
+            "anomaly_z_mean": { "$ref": "#/$defs/NullableNumber" },
+            "area_below_normal_pct": { "$ref": "#/$defs/NullableNumber" },
+            "area_deficit_severe_pct": { "$ref": "#/$defs/NullableNumber" }
+          },
+          "additionalProperties": false
+        },
+        "classes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "count", "area_pct", "color"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "count": { "type": "integer", "minimum": 0 },
+              "area_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+              "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "top_cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["lat", "lon", "anomaly_pct", "anomaly_z", "level"],
+            "properties": {
+              "lat": { "type": "number" },
+              "lon": { "type": "number" },
+              "anomaly_pct": { "$ref": "#/$defs/NullableNumber" },
+              "anomaly_z": { "$ref": "#/$defs/NullableNumber" },
+              "level": { "enum": ["none", "low", "moderate", "high", "extreme"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["time", "anomaly_pct", "level"],
+            "properties": {
+              "time": { "$ref": "#/$defs/IsoDate" },
+              "anomaly_pct": { "$ref": "#/$defs/NullableNumber" },
+              "level": { "enum": ["none", "low", "moderate", "high", "extreme"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
