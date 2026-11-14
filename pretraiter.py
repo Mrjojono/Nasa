@@ -13,10 +13,10 @@ Produit, à partir des fichiers présents dans donnees_pluie_prevue/ :
 Aucune dépendance hors venv : numpy, netCDF4, rasterio.
 
 Usage :
-    .venv/bin/python ../pretraiter.py                 # bbox Sahel par défaut
-    .venv/bin/python ../pretraiter.py --lon-min -20 --lon-max 20 \
-                                      --lat-min -10 --lat-max 25 \
-                                      --table-res 0.5
+    .venv/bin/python pretraiter.py                    # lit in/, écrit out/
+    .venv/bin/python pretraiter.py --lon-min -20 --lon-max 20 \
+                                   --lat-min -10 --lat-max 25 \
+                                   --table-res 0.5
 """
 
 from __future__ import annotations
@@ -36,6 +36,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "donnees_pluie_prevue"
+# Racine lue par find_dir. Le script satellite lit les dossiers produits.
+DATA_ROOT = DATA
 
 CHIRPS_FILL = -9999.0
 IMERG_FILL = -9999.9
@@ -94,7 +96,7 @@ def idx_range(coord: np.ndarray, lo: float, hi: float) -> tuple[int, int]:
 
 def find_dir(*candidates: str) -> Path | None:
     for c in candidates:
-        p = DATA / c
+        p = DATA_ROOT / c
         if p.is_dir():
             return p
     return None
@@ -856,7 +858,38 @@ def write_readme(out: Path, bbox, args, chirps, imerg, stats):
 # Programme principal
 # --------------------------------------------------------------------------
 
+def ecrire_contrat(out: Path) -> None:
+    """Écrit le format de colonnes que le modèle et l'API doivent recevoir."""
+    import json
+
+    payload = {
+        "columns": COLUMNS,
+        "targets": ["rain_next1_mm", "rain_next3_mm"],
+        "id": ["date", "year", "month", "lat", "lon"],
+    }
+    (out / "contrat_colonnes.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    )
+
+
+def verifier_table(path: Path) -> dict:
+    """Échoue si le CSV n'a pas exactement les colonnes du contrat."""
+    if not path.exists() or path.stat().st_size == 0:
+        raise FileNotFoundError(f"Table absente ou vide : {path}")
+    with path.open(newline="") as handle:
+        header = next(csv.reader(handle), None)
+        first = next(csv.reader(handle), None)
+    if header != COLUMNS:
+        raise ValueError(
+            f"{path.name} : colonnes {header} au lieu de {COLUMNS}"
+        )
+    if first is None:
+        raise ValueError(f"{path.name} : aucune ligne de données")
+    return {"path": str(path), "columns": len(header), "bytes": path.stat().st_size}
+
+
 def main() -> int:
+    global DATA_ROOT
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lon-min", type=float, default=-20.0)
@@ -865,11 +898,18 @@ def main() -> int:
     ap.add_argument("--lat-max", type=float, default=25.0)
     ap.add_argument("--table-res", type=float, default=0.5,
                     help="résolution de la table de features, en degrés (0.5 par défaut)")
-    ap.add_argument("--out", type=Path, default=DATA / "preprocessed")
+    ap.add_argument("--data", type=Path, default=DATA,
+                    help="dossier des produits satellite (CHIRPS, IMERG, indices)")
+    ap.add_argument("--out", type=Path, default=DATA / "out")
     ap.add_argument("--no-csv", action="store_true", help="ne pas écrire les tables CSV")
     ap.add_argument("--keep-ocean", action="store_true",
                     help="conserver les mailles océaniques (vides pour CHIRPS)")
     args = ap.parse_args()
+
+    DATA_ROOT = args.data
+    if not DATA_ROOT.is_dir():
+        log(f"Dossier d'entrée introuvable : {DATA_ROOT}")
+        return 1
 
     bbox = (args.lon_min, args.lon_max, args.lat_min, args.lat_max)
     out = args.out
@@ -880,6 +920,7 @@ def main() -> int:
     log("=" * 72)
     log("Prétraitement « pluie prévue »")
     log(f"  bbox lon [{bbox[0]}, {bbox[1]}]  lat [{bbox[2]}, {bbox[3]}]")
+    log(f"  entrée : {DATA_ROOT}")
     log(f"  sortie : {out}")
     log("=" * 72)
 
@@ -1080,6 +1121,9 @@ def main() -> int:
     lines.append("- MODIS NDVI : aucun granule présent (dossier scripts uniquement).")
 
     (out / "rapport_controle.txt").write_text("\n".join(lines) + "\n")
+    ecrire_contrat(out)
+    if not args.no_csv and chirps:
+        verifier_table(out / "features_chirps_sahel.csv")
     write_readme(out, bbox, args, chirps, imerg, stats)
     log(f"\n  → rapport_controle.txt")
     log(f"\nTerminé en {(dt.datetime.now() - t0).seconds} s. Sorties dans {out}")

@@ -7,16 +7,18 @@ Contrat frontend (mêmes formes que contract/mock) :
   GET /api/forecast?lead=1|3
   GET /api/point?lat=&lon=
   GET /api/alerts
+  GET /api/afrique
 
 Maille unique :
   GET /api/predict?lat=&lon=&year=&month=&lead=1|3
 
 Usage :
-    donnees_pluie_prevue/.venv/bin/python api.py --host 0.0.0.0 --port 8000
+    .venv/bin/python api.py --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import joblib
@@ -24,16 +26,19 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from contract_live import Catalog
+from chemins import out_dir
+from contract_live import CONTRACT_VERSION, Catalog
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
 except ImportError:  # optionnel hors stack monitoring
     Instrumentator = None  # type: ignore[misc, assignment]
 
-PRE = Path(__file__).resolve().parent / "donnees_pluie_prevue" / "preprocessed"
-CSV = PRE / "features_chirps_sahel.csv"
+PRE = out_dir()
+MODELE_CSV = PRE / "features_modele.csv"
+CSV = MODELE_CSV if MODELE_CSV.exists() else PRE / "features_chirps_sahel.csv"
 
 FEATURES = [
     "year", "month", "lat", "lon",
@@ -63,33 +68,84 @@ app.add_middleware(
 if Instrumentator is not None:
     Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
-# état chargé au démarrage
+# état chargé au démarrage, rechargé si out/ change (nouvel entraînement)
 _df: pd.DataFrame | None = None
 _models: dict[int, object] = {}
 _lat_unique: np.ndarray = np.array([])
 _lon_unique: np.ndarray = np.array([])
 _catalog: Catalog | None = None
+_sig: tuple | None = None
+_lock = threading.Lock()
+
+
+def _table_csv() -> Path:
+    if MODELE_CSV.exists() and MODELE_CSV.stat().st_size > 0:
+        return MODELE_CSV
+    return PRE / "features_chirps_sahel.csv"
+
+
+def _signature() -> tuple:
+    table = _table_csv()
+    paths = [table, *MODEL_BY_LEAD.values()]
+    return tuple(
+        (str(path), path.stat().st_mtime_ns if path.exists() else 0)
+        for path in paths
+    )
 
 
 def _load_state() -> None:
     global _df, _models, _lat_unique, _lon_unique, _catalog
-    _df = pd.read_csv(CSV, parse_dates=["date"])
-    _lat_unique = np.sort(_df["lat"].unique())
-    _lon_unique = np.sort(_df["lon"].unique())
+    table = _table_csv()
+    if not table.exists():
+        raise FileNotFoundError(table)
+    frame = pd.read_csv(table, parse_dates=["date"])
+    models: dict[int, object] = {}
     for lead, path in MODEL_BY_LEAD.items():
         if path.exists():
-            _models[lead] = joblib.load(path)
-    _catalog = Catalog(_df, _models)
+            models[lead] = joblib.load(path)
+    _df = frame
+    _models = models
+    _lat_unique = np.sort(frame["lat"].unique())
+    _lon_unique = np.sort(frame["lon"].unique())
+    _catalog = Catalog(frame, models)
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    _load_state()
+def _maybe_reload() -> None:
+    global _sig
+    sig = _signature()
+    if sig == _sig:
+        return
+    with _lock:
+        sig = _signature()
+        if sig == _sig:
+            return
+        table = _table_csv()
+        if not table.exists() or table.stat().st_size == 0:
+            return
+        _load_state()
+        _sig = _signature()
+
+
+@app.middleware("http")
+async def _reload_artifacts(request, call_next):
+    try:
+        _maybe_reload()
+    except Exception as exc:  # le serveur reste up, /api/health dira waiting
+        print(f"rechargement impossible : {exc}", flush=True)
+    return await call_next(request)
 
 
 @app.get("/api/health")
-def health() -> dict:
-    return {"status": "ok", "models_loaded": sorted(_models.keys())}
+def health():
+    ready = _df is not None and {1, 3} <= set(_models)
+    body = {
+        "status": "ok" if ready else "waiting",
+        "models_loaded": sorted(_models.keys()),
+        "out": str(PRE),
+    }
+    if not ready:
+        return JSONResponse(body, status_code=503)
+    return body
 
 
 @app.get("/api/predict")
@@ -188,6 +244,20 @@ def point(
     lon: float = Query(..., description="Longitude"),
 ) -> dict:
     return _ready().point(lat, lon)
+
+
+@app.get("/api/afrique")
+def afrique() -> dict:
+    """Prévision JSON pour l'Afrique de l'Ouest, produite à partir du CSV du modèle."""
+    catalog = _ready()
+    return {
+        "resource": "afrique",
+        "contract_version": CONTRACT_VERSION,
+        "region": catalog.meta["region"],
+        "time": catalog.meta["time"],
+        "forecasts": {str(lead): catalog.forecasts[lead] for lead in sorted(catalog.forecasts)},
+        "alerts": catalog.alerts,
+    }
 
 
 @app.get("/api/alerts")

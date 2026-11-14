@@ -105,13 +105,26 @@ services:
       postgres:
         condition: service_healthy
 
+  api:
+    build:
+      context: ./api
+    restart: unless-stopped
+    environment:
+      PLUIE_OUT: /opt/project/donnees_pluie_prevue/out
+    volumes:
+      - ..:/opt/project
+    ports:
+      - "8000:8000"
+    networks:
+      - pluie_net
+
   metrics-exporter:
     build:
       context: ./metrics_exporter
     restart: unless-stopped
     environment:
       MONITORING_DIR: /monitoring
-      PREPROCESSED_DIR: /opt/project/donnees_pluie_prevue/preprocessed
+      PREPROCESSED_DIR: /opt/project/donnees_pluie_prevue/out
       EXPORTER_PORT: "9101"
       REFRESH_SECONDS: "15"
     volumes:
@@ -139,6 +152,7 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - metrics-exporter
+      - api
     networks:
       - pluie_net
 

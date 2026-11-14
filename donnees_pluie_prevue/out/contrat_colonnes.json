@@ -1,0 +1,45 @@
+{
+  "columns": [
+    "date",
+    "year",
+    "month",
+    "lat",
+    "lon",
+    "rain_mm",
+    "clim_mm",
+    "anom_mm",
+    "anom_z",
+    "pct_clim",
+    "rain_3m_mm",
+    "anom_3m_mm",
+    "rain_lag1_mm",
+    "rain_lag3_mm",
+    "rain_lag6_mm",
+    "rain_lag12_mm",
+    "oni",
+    "roni",
+    "soi",
+    "nino12_anom",
+    "nino3_anom",
+    "nino4_anom",
+    "nino34_anom",
+    "atl3_anom",
+    "oni_lag3",
+    "oni_lag6",
+    "month_sin",
+    "month_cos",
+    "rain_next1_mm",
+    "rain_next3_mm"
+  ],
+  "targets": [
+    "rain_next1_mm",
+    "rain_next3_mm"
+  ],
+  "id": [
+    "date",
+    "year",
+    "month",
+    "lat",
+    "lon"
+  ]
+}
