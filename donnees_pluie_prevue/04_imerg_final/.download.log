@@ -1,0 +1,41 @@
+OK 3B-MO.MS.MRG.3IMERG.19980301-S000000-E235959.03.V07B.HDF5 18220060
+OK 3B-MO.MS.MRG.3IMERG.19980101-S000000-E235959.01.V07B.HDF5 17385976
+OK 3B-MO.MS.MRG.3IMERG.19980201-S000000-E235959.02.V07B.HDF5 17889158
+OK 3B-MO.MS.MRG.3IMERG.19980401-S000000-E235959.04.V07B.HDF5 18566051
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19980501-S000000-E235959.05.V07B.HDF5 18968323
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19980701-S000000-E235959.07.V07B.HDF5 18675078
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19980901-S000000-E235959.09.V07B.HDF5 18484679
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19980601-S000000-E235959.06.V07B.HDF5 18762770
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19981001-S000000-E235959.10.V07B.HDF5 17606992
+OK 3B-MO.MS.MRG.3IMERG.19980801-S000000-E235959.08.V07B.HDF5 18480319
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19981101-S000000-E235959.11.V07B.HDF5 17699337
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) Recv failure: Connection reset by peer
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19981201-S000000-E235959.12.V07B.HDF5 17406095
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading
+OK 3B-MO.MS.MRG.3IMERG.19990201-S000000-E235959.02.V07B.HDF5 17728508
+OK 3B-MO.MS.MRG.3IMERG.19990101-S000000-E235959.01.V07B.HDF5 17166808
+OK 3B-MO.MS.MRG.3IMERG.19990301-S000000-E235959.03.V07B.HDF5 17994049

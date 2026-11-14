@@ -1,0 +1,151 @@
+{
+  "target": "rain_next3_mm",
+  "n_train": 121824,
+  "n_test": 50760,
+  "features": [
+    "year",
+    "month",
+    "lat",
+    "lon",
+    "rain_mm",
+    "clim_mm",
+    "anom_mm",
+    "anom_z",
+    "pct_clim",
+    "rain_3m_mm",
+    "anom_3m_mm",
+    "rain_lag1_mm",
+    "rain_lag3_mm",
+    "rain_lag6_mm",
+    "rain_lag12_mm",
+    "oni",
+    "roni",
+    "soi",
+    "nino12_anom",
+    "nino3_anom",
+    "nino4_anom",
+    "nino34_anom",
+    "atl3_anom",
+    "oni_lag3",
+    "oni_lag6",
+    "month_sin",
+    "month_cos"
+  ],
+  "metrics": {
+    "rmse": 101.33608302707376,
+    "mae": 61.63187415142176,
+    "r2": 0.8617050733539142,
+    "bias": 30.24725312715965,
+    "n_test": 50760
+  },
+  "feature_importance": [
+    {
+      "feature": "clim_mm",
+      "importance": 0.37610265612602234
+    },
+    {
+      "feature": "month",
+      "importance": 0.09531041979789734
+    },
+    {
+      "feature": "lat",
+      "importance": 0.07940731197595596
+    },
+    {
+      "feature": "rain_mm",
+      "importance": 0.0750727653503418
+    },
+    {
+      "feature": "month_sin",
+      "importance": 0.05613355711102486
+    },
+    {
+      "feature": "anom_3m_mm",
+      "importance": 0.04952520877122879
+    },
+    {
+      "feature": "month_cos",
+      "importance": 0.04679572582244873
+    },
+    {
+      "feature": "lon",
+      "importance": 0.03193768113851547
+    },
+    {
+      "feature": "oni_lag6",
+      "importance": 0.02560475282371044
+    },
+    {
+      "feature": "nino12_anom",
+      "importance": 0.019147522747516632
+    },
+    {
+      "feature": "rain_lag6_mm",
+      "importance": 0.016397006809711456
+    },
+    {
+      "feature": "oni_lag3",
+      "importance": 0.01573099009692669
+    },
+    {
+      "feature": "atl3_anom",
+      "importance": 0.014781737700104713
+    },
+    {
+      "feature": "roni",
+      "importance": 0.011751295998692513
+    },
+    {
+      "feature": "nino4_anom",
+      "importance": 0.011555223725736141
+    },
+    {
+      "feature": "nino34_anom",
+      "importance": 0.011460901238024235
+    },
+    {
+      "feature": "oni",
+      "importance": 0.011117580346763134
+    },
+    {
+      "feature": "nino3_anom",
+      "importance": 0.011004709638655186
+    },
+    {
+      "feature": "soi",
+      "importance": 0.009538979269564152
+    },
+    {
+      "feature": "rain_3m_mm",
+      "importance": 0.006059778854250908
+    },
+    {
+      "feature": "rain_lag3_mm",
+      "importance": 0.005848761647939682
+    },
+    {
+      "feature": "rain_lag1_mm",
+      "importance": 0.005124187096953392
+    },
+    {
+      "feature": "rain_lag12_mm",
+      "importance": 0.00392050389200449
+    },
+    {
+      "feature": "pct_clim",
+      "importance": 0.0038744178600609303
+    },
+    {
+      "feature": "year",
+      "importance": 0.0035623032599687576
+    },
+    {
+      "feature": "anom_mm",
+      "importance": 0.0016708682524040341
+    },
+    {
+      "feature": "anom_z",
+      "importance": 0.001563131925649941
+    }
+  ]
+}
