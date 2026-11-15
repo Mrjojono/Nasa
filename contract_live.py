@@ -630,3 +630,105 @@ class Catalog:
             "top_cells": top,
             "history": history,
         }
+
+    def _signals(self) -> dict:
+        """Séries temporelles des indices océaniques (ENSO + Atlantique).
+
+        Les indices sont constants par mois (pas par maille), on prend
+        donc la première ligne de chaque mois.
+        """
+        monthly = self.df.groupby("date", as_index=False).first()
+        monthly = monthly.sort_values("date")
+        series = []
+        for row in monthly.itertuples(index=False):
+            series.append({
+                "time": pd.Timestamp(row.date).strftime("%Y-%m-%d"),
+                "oni": num(getattr(row, "oni", None), 2),
+                "tna": num(getattr(row, "atl3_anom", None), 2),
+                "gog": num(getattr(row, "atl3_anom", None), 2),
+            })
+        return {
+            "resource": "signals",
+            "contract_version": CONTRACT_VERSION,
+            "status": "partial",
+            "note": (
+                "ONI depuis CPC (colonne oni). TNA et GOG approximés par "
+                "l'indice Atl3 (seul indice atlantique disponible dans le "
+                "prétraitement actuel)."
+            ),
+            "units": {
+                "oni": "degC",
+                "tna": "degC anomalie",
+                "gog": "degC anomalie",
+            },
+            "labels": {
+                "oni": "ONI (Pacifique / El Niño)",
+                "tna": "SST Atlantique tropical (proxy Atl3)",
+                "gog": "SST Golfe de Guinée (proxy Atl3)",
+            },
+            "lags_months_literature": {
+                "oni": [4, 8],
+                "tna": [3, 6],
+                "gog": [1, 3],
+            },
+            "series": series,
+        }
+
+    def _metrics(self) -> dict:
+        """Tableau de métriques des modèles (XGBoost + climatologie)."""
+        models = []
+        for lead_str, target in (("1", "rain_next1_mm"), ("3", "rain_next3_mm")):
+            score = self.scores.get(lead_str)
+            if score is None or score.get("n", 0) == 0:
+                continue
+            models.append({
+                "id": f"xgb-rain-v1-lead{lead_str}",
+                "label": f"XGBoost — pluie mensuelle, lead {lead_str} mois",
+                "kind": "trained",
+                "split": "holdout temporel : test 1984-01 → 1985-06",
+                "n": score["n"],
+                "on": target,
+                "rmse": score["rmse"],
+                "mae": score["mae"],
+                "bias": score["bias"],
+                "r2": None,
+                "nse": None,
+                "pbias": None,
+                "skill_vs_climatology": score["skill_vs_climatology"],
+                "comment": (
+                    f"Modèle XGBoost (400 arbres, profondeur 6) entraîné "
+                    f"avant 1984, testé sur {score['n']} observations."
+                ),
+            })
+        clim_n = self.scores.get("1", {}).get("n", 0)
+        models.append({
+            "id": "climatology",
+            "label": "Climatologie (normale du mois)",
+            "kind": "reference",
+            "split": "holdout temporel : test 1984-01 → 1985-06",
+            "n": clim_n,
+            "on": "rain_mm vs clim_mm (cycle saisonnier inclus)",
+            "rmse": self.clim_rmse.get(1),
+            "mae": None,
+            "bias": None,
+            "r2": None,
+            "nse": None,
+            "pbias": None,
+            "skill_vs_climatology": 0,
+            "comment": (
+                "Référence : prévoir la normale du mois. Skill = 0 par "
+                "construction."
+            ),
+        })
+        return {
+            "resource": "metrics",
+            "contract_version": CONTRACT_VERSION,
+            "status": "partial",
+            "note": (
+                "Métriques du modèle XGBoost (holdout temporel 1984-1985). "
+                "R²/NSE/PBIAS non calculés par l'API actuelle ; "
+                "disponibles dans metrics.json après l'entraînement."
+            ),
+            "target": "rain_mm (et skill vs climatologie)",
+            "models": models,
+        }

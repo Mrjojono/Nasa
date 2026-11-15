@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
-
+.venv/
 # Jetons NASA Earthdata — rester en local
 donnees_pluie_prevue/00_docs/edl_token.txt
 donnees_pluie_prevue/04_imerg_final/.edl_token

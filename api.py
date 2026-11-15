@@ -195,6 +195,16 @@ def alerts() -> dict:
     return _ready().alerts
 
 
+@app.get("/api/signals")
+def signals() -> dict:
+    return _ready()._signals()
+
+
+@app.get("/api/metrics")
+def metrics() -> dict:
+    return _ready()._metrics()
+
+
 def main() -> int:
     import argparse
     import uvicorn
