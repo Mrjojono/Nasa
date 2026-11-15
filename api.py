@@ -7,6 +7,8 @@ Contrat frontend (mêmes formes que contract/mock) :
   GET /api/forecast?lead=1|3
   GET /api/point?lat=&lon=
   GET /api/alerts
+  GET /api/signals
+  GET /api/metrics
   GET /api/afrique
 
 Maille unique :
@@ -18,6 +20,7 @@ Usage :
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 
@@ -280,6 +283,25 @@ def afrique() -> dict:
 @app.get("/api/alerts")
 def alerts() -> dict:
     return _ready().alerts
+
+
+def _ocean_series() -> list[dict]:
+    path = PRE / "signaux_ocean.json"
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text())
+    series = payload.get("series")
+    return series if isinstance(series, list) else []
+
+
+@app.get("/api/signals")
+def signals() -> dict:
+    return _ready().signals(_ocean_series())
+
+
+@app.get("/api/metrics")
+def model_metrics() -> dict:
+    return _ready().metrics()
 
 
 def main() -> int:

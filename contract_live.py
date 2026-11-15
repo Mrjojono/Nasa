@@ -124,7 +124,7 @@ class Catalog:
         self.step = float(self.lon[1] - self.lon[0]) if self.nx > 1 else 0.5
         self.clim = self._monthly_field("clim_mm")
         self.std = self._std_field()
-        self.scores, self.clim_rmse = self._scores()
+        self.scores, self.clim_rmse, self.clim_rows = self._scores()
         self.forecasts = {lead: self._forecast(lead) for lead in (1, 3) if lead in models}
         self.meta = self._meta()
         self.frames = {
@@ -179,28 +179,53 @@ class Catalog:
             total += self.clim[mi, iy, ix]
         return total
 
-    def _scores(self) -> tuple[dict, dict]:
+    def _fit_stats(self, err: np.ndarray, y: np.ndarray) -> dict:
+        rmse = float(np.sqrt(np.mean(err * err))) if err.size else None
+        mae = float(np.mean(np.abs(err))) if err.size else None
+        bias = float(np.mean(err)) if err.size else None
+        denom = float(np.sum((y - np.mean(y)) ** 2)) if y.size else 0.0
+        r2 = 1.0 - float(np.sum(err * err)) / denom if denom > 0 else None
+        ysum = float(np.sum(y)) if y.size else 0.0
+        pbias = 100.0 * float(np.sum(err)) / ysum if ysum != 0 else None
+        return {
+            "rmse": num(rmse, 2),
+            "mae": num(mae, 2),
+            "bias": num(bias, 2),
+            "r2": num(r2, 3),
+            "nse": num(r2, 3),
+            "pbias": num(pbias, 2),
+            "n": int(y.size),
+        }
+
+    def _scores(self) -> tuple[dict, dict, dict]:
         scores: dict[str, dict] = {}
         clim_rmse: dict[int, float | None] = {}
+        clim_rows: dict[int, dict] = {}
+        empty = {
+            "rmse": None, "mae": None, "bias": None, "r2": None, "nse": None,
+            "pbias": None, "skill_vs_climatology": None, "n": 0,
+        }
         for lead, target in ((1, "rain_next1_mm"), (3, "rain_next3_mm")):
-            empty = {"rmse": None, "mae": None, "bias": None, "skill_vs_climatology": None, "n": 0}
             model = self.models.get(lead)
             if model is None or target not in self.df.columns:
-                scores[str(lead)] = empty
+                scores[str(lead)] = dict(empty)
                 clim_rmse[lead] = None
+                clim_rows[lead] = dict(empty)
                 continue
             test = self.df.dropna(subset=[target])
             test = test[test["date"] >= "1984-01-01"]
             if test.empty:
-                scores[str(lead)] = empty
+                scores[str(lead)] = dict(empty)
                 clim_rmse[lead] = None
+                clim_rows[lead] = dict(empty)
                 continue
             X = test[FEATURES].to_numpy(dtype="float32")
             X = np.where(np.isfinite(X), X, 0.0)
             pred = np.clip(model.predict(X).astype("float64"), 0.0, None)
             y = test[target].to_numpy(dtype="float64")
             err = pred - y
-            rmse = float(np.sqrt(np.mean(err * err)))
+            fitted = self._fit_stats(err, y)
+            rmse = fitted["rmse"]
             iy = test["lat"].round(4).map(self.lat_pos)
             ix = test["lon"].round(4).map(self.lon_pos)
             ok = iy.notna() & ix.notna()
@@ -215,19 +240,17 @@ class Catalog:
             finite = np.isfinite(base) & np.isfinite(y)
             rmse_c = None
             skill = None
+            clim_rows[lead] = dict(empty)
             if int(finite.sum()) > 10:
-                rmse_c = float(np.sqrt(np.mean((base[finite] - y[finite]) ** 2)))
-                if rmse_c > 0:
-                    skill = 1.0 - rmse / rmse_c
-            scores[str(lead)] = {
-                "rmse": num(rmse, 2),
-                "mae": num(float(np.mean(np.abs(err))), 2),
-                "bias": num(float(np.mean(err)), 2),
-                "skill_vs_climatology": num(skill, 3),
-                "n": int(len(y)),
-            }
+                c_err = base[finite] - y[finite]
+                clim_rows[lead] = self._fit_stats(c_err, y[finite])
+                rmse_c = clim_rows[lead]["rmse"]
+                if rmse_c and rmse is not None and rmse_c > 0:
+                    skill = 1.0 - float(rmse) / float(rmse_c)
+            fitted["skill_vs_climatology"] = num(skill, 3)
+            scores[str(lead)] = fitted
             clim_rmse[lead] = num(rmse_c, 2)
-        return scores, clim_rmse
+        return scores, clim_rmse, clim_rows
 
     def _grid(self) -> dict:
         return {
@@ -490,6 +513,98 @@ class Catalog:
                 "label": "Climatologie des mois visés",
                 "rmse": self.clim_rmse.get(lead),
             },
+        }
+
+    def metrics(self) -> dict:
+        rows = []
+        horizons = {
+            1: (
+                "XGBoost — 1 mois",
+                "Pluie du mois suivant, en mm, sur le test à partir de janvier 1984.",
+            ),
+            3: (
+                "XGBoost — 3 mois",
+                "Somme des trois mois suivants, en mm. Ce n'est pas la pluie du seul mois de septembre.",
+            ),
+        }
+        for lead, (label, comment) in horizons.items():
+            score = self.scores.get(str(lead), {})
+            skill = score.get("skill_vs_climatology")
+            if isinstance(skill, (int, float)):
+                verdict = (
+                    "Le modèle fait mieux que la normale du mois."
+                    if skill > 0
+                    else "La normale du mois fait mieux sur ce test."
+                )
+                comment = f"{comment} {verdict}"
+            rows.append({
+                "id": f"xgb-lead{lead}",
+                "label": label,
+                "kind": "trained",
+                "split": "test ≥ 1984-01",
+                "n": int(score.get("n") or 0),
+                "on": "features CHIRPS Sahel",
+                "rmse": score.get("rmse"),
+                "mae": score.get("mae"),
+                "bias": score.get("bias"),
+                "r2": score.get("r2"),
+                "nse": score.get("nse"),
+                "pbias": score.get("pbias"),
+                "skill_vs_climatology": skill,
+                "comment": comment,
+            })
+            clim = self.clim_rows.get(lead, {})
+            rows.append({
+                "id": f"clim-lead{lead}",
+                "label": "Climatologie" if lead == 1 else "Climatologie — somme 3 mois",
+                "kind": "baseline",
+                "split": "test ≥ 1984-01",
+                "n": int(clim.get("n") or 0),
+                "on": "normale du mois",
+                "rmse": clim.get("rmse"),
+                "mae": clim.get("mae"),
+                "bias": clim.get("bias"),
+                "r2": clim.get("r2"),
+                "nse": clim.get("nse"),
+                "pbias": clim.get("pbias"),
+                "skill_vs_climatology": 0,
+                "comment": "Prévision égale à la normale du mois, ou à la somme des normales pour l'horizon de 3 mois.",
+            })
+        return {
+            "resource": "metrics",
+            "contract_version": CONTRACT_VERSION,
+            "status": "ready",
+            "note": "Scores du test temporel (entraînement avant 1984-01). Un skill négatif veut dire que prévoir la normale du mois est plus juste.",
+            "target": "pluie CHIRPS, horizons 1 mois et somme des 3 mois suivants",
+            "models": rows,
+        }
+
+    def signals(self, series: list[dict] | None = None) -> dict:
+        rows = list(series or [])
+        if not rows and "oni" in self.df.columns:
+            grouped = self.df.groupby(pd.to_datetime(self.df["date"]).dt.strftime("%Y-%m-%d"))["oni"].mean()
+            rows = [
+                {"time": time, "oni": num(value, 3), "tna": None, "gog": None}
+                for time, value in grouped.items()
+            ]
+        has_atlantic = any(row.get("tna") is not None or row.get("gog") is not None for row in rows)
+        return {
+            "resource": "signals",
+            "contract_version": CONTRACT_VERSION,
+            "status": "ready" if has_atlantic else "partial",
+            "note": (
+                "ONI : indice Niño du CPC. "
+                "TNA : anomalie SST ERSST v6, 5,5°N–23,5°N et 57,5°O–15°O. "
+                "Golfe de Guinée : 5°S–5°N et 10°O–10°E. Base 1991-2020."
+            ),
+            "units": {"oni": "°C", "tna": "°C", "gog": "°C"},
+            "labels": {
+                "oni": "ONI",
+                "tna": "Atlantique tropical nord",
+                "gog": "Golfe de Guinée",
+            },
+            "lags_months_literature": {"oni": [4, 8], "tna": [3, 6], "gog": [1, 3]},
+            "series": rows,
         }
 
     def point(self, lat: float, lon: float) -> dict:
