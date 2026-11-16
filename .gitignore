@@ -1,6 +1,29 @@
 __pycache__/
 *.pyc
+.fastapicloud/
+.venv/
 
 # Jetons NASA Earthdata — rester en local
 donnees_pluie_prevue/00_docs/edl_token.txt
 donnees_pluie_prevue/04_imerg_final/.edl_token
+
+# Sources et produits du modèle : téléchargés par preparer_donnees.py
+donnees_pluie_prevue/**/*.tif
+donnees_pluie_prevue/**/*.nc
+donnees_pluie_prevue/**/*.HDF5
+donnees_pluie_prevue/**/*.hdf5
+donnees_pluie_prevue/**/*.h5
+donnees_pluie_prevue/**/*.csv
+donnees_pluie_prevue/**/*.joblib
+donnees_pluie_prevue/**/*.json
+donnees_pluie_prevue/**/*.png
+donnees_pluie_prevue/**/*.txt
+donnees_pluie_prevue/**/*.html
+donnees_pluie_prevue/**/*.ascii
+donnees_pluie_prevue/**/soi
+donnees_pluie_prevue/**/.download.log
+donnees_pluie_prevue/**/.filelist.txt
+donnees_pluie_prevue/**/.urls.txt
+donnees_pluie_prevue/out/
+donnees_pluie_prevue/preprocessed/
+donnees_pluie_prevue/telecharger/

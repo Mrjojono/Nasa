@@ -43,12 +43,15 @@ NASA IMERG Final V07 was downloaded with an Earthdata login and is stored in thi
 
 ## Run locally
 
-Python 3.12. The feature table and the `.joblib` files must already be in `donnees_pluie_prevue/out/`.
+Python 3.12. The satellite files are not in the Git repository.
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e .
+.venv/bin/python preparer_donnees.py --entrainer
 .venv/bin/python api.py --host 127.0.0.1 --port 8000
 ```
+
+`preparer_donnees.py` downloads CHIRPS v3.0 (January 1981 to June 1985), the NOAA CPC indices, and ERSST v6, then builds the feature table. Add `--seulement-telecharger` to stop before processing. Files already on disk are skipped.
 
 Open http://127.0.0.1:8000/docs. The first request loads the CSV and the models. No database is required: if `PLUIE_DATABASE_URL` is unset, the API reads the CSV.
