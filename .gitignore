@@ -21,6 +21,8 @@ donnees_pluie_prevue/**/*.txt
 donnees_pluie_prevue/**/*.html
 donnees_pluie_prevue/**/*.ascii
 donnees_pluie_prevue/**/soi
+donnees_pluie_prevue/**/*.indices
+donnees_pluie_prevue/preprocessed
 donnees_pluie_prevue/**/.download.log
 donnees_pluie_prevue/**/.filelist.txt
 donnees_pluie_prevue/**/.urls.txt
