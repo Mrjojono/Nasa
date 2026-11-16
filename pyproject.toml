@@ -1,0 +1,16 @@
+[project]
+name = "pluie-prevue"
+version = "1.0.0"
+description = "API de prévision de pluie mensuelle (XGBoost)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi[standard]>=0.115",
+  "pandas>=2.2",
+  "numpy>=2.1",
+  "scikit-learn>=1.5",
+  "joblib>=1.4",
+  "xgboost>=2.1",
+]
+
+[tool.fastapi]
+entrypoint = "api:app"

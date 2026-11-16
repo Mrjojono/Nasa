@@ -1,0 +1,33 @@
+# Le plan Hobby n'a pas à recevoir le venv ni les rasters bruts (~2 Go).
+# L'API n'a besoin que du code et de donnees_pluie_prevue/out
+# (CSV features, modèles .joblib, signaux_ocean.json).
+
+.venv/
+donnees_pluie_prevue/.venv/
+__pycache__/
+**/*.pyc
+.git/
+.claude/
+.cursor/
+infra/
+contract/
+pretreament.ipynb
+
+donnees_pluie_prevue/00_docs/
+donnees_pluie_prevue/02_ersst_v6/
+donnees_pluie_prevue/03_indices_cpc/
+donnees_pluie_prevue/04_imerg_final/
+donnees_pluie_prevue/05_modis_ndvi/
+donnees_pluie_prevue/telecharger/
+donnees_pluie_prevue/preprocessed/
+
+*.tif
+*.nc
+*.png
+*.zip
+
+# .gitignore exclut out/ pour GitHub. Le cloud en a besoin pour servir l'API.
+!donnees_pluie_prevue/out/
+!donnees_pluie_prevue/out/*.csv
+!donnees_pluie_prevue/out/*.joblib
+!donnees_pluie_prevue/out/*.json

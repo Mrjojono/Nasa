@@ -21,6 +21,7 @@ Usage :
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -61,11 +62,18 @@ MODEL_BY_LEAD = {
     3: PRE / "xgb_rain_next3_mm.joblib",
 }
 
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("CORS_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
 app = FastAPI(title="Pluie prévue — API XGBoost", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_origins=_cors_origins(),
+    allow_methods=["GET", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -145,13 +153,23 @@ def _maybe_reload() -> None:
         _sig = _signature()
 
 
+_LIGHT_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/favicon.ico"}
+
+
 @app.middleware("http")
 async def _reload_artifacts(request, call_next):
-    try:
-        _maybe_reload()
-    except Exception as exc:  # le serveur reste up, /api/health dira waiting
-        print(f"rechargement impossible : {exc}", flush=True)
+    # / et /docs répondent sans charger le CSV : le health check cloud reste rapide.
+    if request.url.path not in _LIGHT_PATHS:
+        try:
+            _maybe_reload()
+        except Exception as exc:  # le serveur reste up, /api/health dira waiting
+            print(f"rechargement impossible : {exc}", flush=True)
     return await call_next(request)
+
+
+@app.get("/")
+def root() -> dict:
+    return {"status": "ok", "health": "/api/health", "docs": "/docs"}
 
 
 @app.get("/api/health")
